@@ -1,0 +1,49 @@
+# ============================================================
+#  TestGhost v2 — docker-compose.yml
+#  Runs: PostgreSQL 16 + pgvector extension
+#  Usage: docker compose up -d
+# ============================================================
+
+version: "3.9"
+
+services:
+
+  postgres:
+    image: pgvector/pgvector:pg16          # official pgvector image — includes extension
+    container_name: testghost_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-testghost}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-testghost_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-testghost}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - testghost_pgdata:/var/lib/postgresql/data
+      - ./scripts/init_pgvector.sql:/docker-entrypoint-initdb.d/01_init_pgvector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-testghost} -d ${POSTGRES_DB:-testghost}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional: uncomment to run the backend in Docker too
+  # backend:
+  #   build: .
+  #   container_name: testghost_backend
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     DATABASE_URL: postgresql+asyncpg://testghost:testghost_secret@postgres:5432/testghost
+  #     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ./output:/app/output
+  #     - ./models:/app/models
+  #   command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  testghost_pgdata:
+    driver: local

@@ -1,0 +1,50 @@
+[
+  {
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "method": "POST",
+    "path": "/api/auth/login",
+    "url": "http://testapp.local/api/auth/login",
+    "request_headers": {"content-type": "application/json"},
+    "request_body": "{\"email\": \"[SCRUBBED_EMAIL]\", \"password\": \"[SCRUBBED]\"}",
+    "response_status": 200,
+    "response_body": "{\"token\": \"[SCRUBBED_JWT]\", \"user_id\": 42, \"role\": \"user\"}",
+    "response_headers": {"content-type": "application/json"},
+    "response_time_ms": 145.2
+  },
+  {
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "method": "GET",
+    "path": "/api/users/42",
+    "url": "http://testapp.local/api/users/42",
+    "request_headers": {"authorization": "[SCRUBBED_HEADER]"},
+    "request_body": null,
+    "response_status": 200,
+    "response_body": "{\"id\": 42, \"name\": \"Test User\", \"email\": \"[SCRUBBED_EMAIL]\", \"role\": \"user\"}",
+    "response_headers": {"content-type": "application/json"},
+    "response_time_ms": 88.1
+  },
+  {
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "method": "POST",
+    "path": "/api/users",
+    "url": "http://testapp.local/api/users",
+    "request_headers": {"content-type": "application/json", "authorization": "[SCRUBBED_HEADER]"},
+    "request_body": "{\"name\": \"New User\", \"email\": \"[SCRUBBED_EMAIL]\", \"role\": \"user\"}",
+    "response_status": 201,
+    "response_body": "{\"id\": 99, \"name\": \"New User\", \"created_at\": \"2025-01-01T00:00:00Z\"}",
+    "response_headers": {"content-type": "application/json"},
+    "response_time_ms": 210.5
+  },
+  {
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "method": "GET",
+    "path": "/api/admin/stats",
+    "url": "http://testapp.local/api/admin/stats",
+    "request_headers": {"authorization": "[SCRUBBED_HEADER]"},
+    "request_body": null,
+    "response_status": 200,
+    "response_body": "{\"total_users\": 1500, \"active_sessions\": 42, \"revenue_today\": 9800}",
+    "response_headers": {"content-type": "application/json"},
+    "response_time_ms": 8200.0
+  }
+]

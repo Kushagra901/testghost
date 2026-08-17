@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+.venv/
+venv/
+env/
+ENV/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Models (large binary files — retrain locally)
+models/isolation_forest.pkl
+models/embeddings_cache/
+
+# Output (generated — not source)
+output/tests/
+output/reports/
+
+# mitmproxy
+.mitmproxy/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Mypy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
+
+# Alembic — keep migrations, not __pycache__
+alembic/__pycache__/
+alembic/versions/__pycache__/
+
+# Logs
+*.log
+logs/
+
+# TestGhost temporary state
+.testghost_session
+.testghost_last_session
+.deepeval/
+

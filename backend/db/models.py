@@ -1,0 +1,167 @@
+"""
+SQLAlchemy ORM models for TestGhost v2.
+All IDs are UUIDs. All timestamps are UTC.
+"""
+
+import uuid
+from datetime import datetime
+from enum import Enum as PyEnum
+
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy import JSON
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
+
+
+class SessionStatus(str, PyEnum):
+    ACTIVE = "active"
+    COMPLETE = "complete"
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Session(Base):
+    """A TestGhost recording session — groups all captured requests."""
+
+    __tablename__ = "sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[SessionStatus] = mapped_column(
+        SAEnum(SessionStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=SessionStatus.ACTIVE,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    requests: Mapped[list["CapturedRequest"]] = relationship(
+        "CapturedRequest", back_populates="session", cascade="all, delete-orphan"
+    )
+    generated_tests: Mapped[list["GeneratedTest"]] = relationship(
+        "GeneratedTest", back_populates="session", cascade="all, delete-orphan"
+    )
+
+
+class CapturedRequest(Base):
+    """One HTTP request+response pair captured by the mitmproxy addon."""
+
+    __tablename__ = "captured_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False
+    )
+
+    # ── Request ──────────────────────────────────────────────
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    request_headers: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    request_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── Response ─────────────────────────────────────────────
+    response_status: Mapped[int] = mapped_column(Integer, nullable=False)
+    response_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    response_headers: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    response_time_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # ── RAG deduplication ────────────────────────────────────
+    is_duplicate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    duplicate_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+
+    # ── Anomaly detection ────────────────────────────────────
+    anomaly_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_anomaly: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # ── Clustering ───────────────────────────────────────────
+    cluster_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cluster_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    session: Mapped["Session"] = relationship("Session", back_populates="requests")
+    embedding: Mapped["Embedding | None"] = relationship(
+        "Embedding", back_populates="captured_request", uselist=False
+    )
+
+
+class Embedding(Base):
+    """Stores the 384-dim sentence-transformer embedding for a CapturedRequest."""
+
+    __tablename__ = "embeddings"
+
+    __table_args__ = (UniqueConstraint("captured_request_id", name="uq_embedding_request"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    captured_request_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("captured_requests.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    vector: Mapped[list[float]] = mapped_column(Vector(384), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    captured_request: Mapped["CapturedRequest"] = relationship(
+        "CapturedRequest", back_populates="embedding"
+    )
+
+
+class GeneratedTest(Base):
+    """A test file generated by the LangGraph pipeline for a cluster."""
+
+    __tablename__ = "generated_tests"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    cluster_label: Mapped[str] = mapped_column(String(100), nullable=False)
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    code: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # ── Eval scores ──────────────────────────────────────────
+    score_coverage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_correctness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_edge_coverage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_overall: Mapped[float | None] = mapped_column(Float, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_high_confidence: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    session: Mapped["Session"] = relationship("Session", back_populates="generated_tests")

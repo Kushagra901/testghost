@@ -1,0 +1,105 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "testghost"
+version = "0.1.0"
+description = "AI-native test generation engine — watches your app, writes your tests"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["testing", "ai", "ml", "mitmproxy", "pytest", "langgraph", "rag"]
+
+dependencies = [
+    # ── Web framework ──────────────────────────────────────────────
+    "fastapi==0.111.0",
+    "uvicorn[standard]==0.29.0",
+    "httpx==0.27.0",
+    "python-multipart==0.0.9",
+
+    # ── Database ───────────────────────────────────────────────────
+    "sqlalchemy[asyncio]==2.0.30",
+    "asyncpg==0.29.0",
+    "alembic==1.13.1",
+    "pgvector==0.2.5",
+    "psycopg2-binary==2.9.9",        # alembic sync driver
+
+    # ── Proxy capture ──────────────────────────────────────────────
+    "mitmproxy>=10.3.1",
+
+    # ── AI / LLM ──────────────────────────────────────────────────
+    "anthropic>=0.28.0",
+    "langgraph==0.1.5",
+    "langchain-anthropic==0.1.15",
+    "langchain-core==0.2.5",
+
+    # ── ML / Embeddings ────────────────────────────────────────────
+    "sentence-transformers==3.0.1",
+    "scikit-learn==1.5.2",
+    "numpy==1.26.4",
+    "joblib==1.4.2",
+
+    # ── Evaluation ────────────────────────────────────────────────
+    "deepeval==0.21.42",
+
+    # ── Reporting ─────────────────────────────────────────────────
+    "jinja2==3.1.4",
+
+    # ── CLI ───────────────────────────────────────────────────────
+    "click==8.1.7",
+    "tabulate==0.9.0",
+    "rich==13.7.1",
+
+    # ── Utilities ─────────────────────────────────────────────────
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.3.0",
+    "python-dotenv==1.0.1",
+    "python-jose[cryptography]==3.3.0",  # JWT detection in scrubber
+    "tenacity>=8.2.3,<8.3.0",                   # retry logic helpers
+]
+
+[project.scripts]
+testghost = "cli.cli:cli"
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.2.0",
+    "pytest-asyncio==0.23.7",
+    "pytest-cov==5.0.0",
+    "httpx==0.27.0",          # async test client
+    "factory-boy==3.3.0",     # test fixtures
+    "respx==0.21.1",          # mock httpx calls
+    "ruff==0.4.7",            # linter + formatter
+    "mypy==1.10.0",           # type checker
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "proxy",
+    "backend",
+    "ml",
+    "langgraph_pipeline",
+    "evaluation",
+    "generation",
+    "reporting",
+    "cli",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "--cov=backend --cov=ml --cov=langgraph_pipeline --cov=evaluation --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "I", "N", "UP", "ANN", "S", "B", "A", "C4", "RET"]
+ignore = ["ANN101", "ANN102", "S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true

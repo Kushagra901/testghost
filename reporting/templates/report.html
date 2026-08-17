@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TestGhost Report — {{ session.name }}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f8f8f6; color: #1a1a18; font-size: 14px; }
+  .header { background: #1a1a18; color: #fff; padding: 24px 32px; }
+  .header h1 { margin: 0 0 4px; font-size: 20px; font-weight: 500; }
+  .header p { margin: 0; color: #888; font-size: 13px; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px 32px; }
+  .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 28px; }
+  .stat { background: #fff; border: 1px solid #e8e6e1; border-radius: 8px; padding: 14px 16px; }
+  .stat-num { font-size: 24px; font-weight: 500; }
+  .stat-label { font-size: 11px; color: #666; margin-top: 3px; }
+  .section { background: #fff; border: 1px solid #e8e6e1; border-radius: 8px; margin-bottom: 20px; overflow: hidden; }
+  .section-header { padding: 14px 18px; border-bottom: 1px solid #e8e6e1; font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 9px 14px; text-align: left; font-size: 11px; color: #666; font-weight: 500; border-bottom: 1px solid #e8e6e1; background: #faf9f7; }
+  td { padding: 9px 14px; border-bottom: 1px solid #f0ede8; font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 500; }
+  .badge-green { background: #EAF3DE; color: #27500A; }
+  .badge-yellow { background: #FAEEDA; color: #633806; }
+  .badge-red { background: #FAECE7; color: #712B13; }
+  .badge-gray { background: #F1EFE8; color: #555; }
+  .badge-anomaly { background: #FAECE7; color: #712B13; }
+  .score { font-weight: 500; }
+  .score-high { color: #1D9E75; }
+  .score-mid { color: #BA7517; }
+  .score-low { color: #C0392B; }
+  code { font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; background: #f1efe8; padding: 1px 5px; border-radius: 3px; }
+  .method { font-family: monospace; font-size: 11px; font-weight: 600; }
+  .get { color: #1D9E75; } .post { color: #185FA5; } .put { color: #BA7517; } .delete { color: #C0392B; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>TestGhost Report — {{ session.name }}</h1>
+  <p>Generated {{ generated_at }} &nbsp;·&nbsp; Session ID: {{ session.id }}</p>
+</div>
+
+<div class="container">
+
+  <!-- Summary stats -->
+  <div class="stats">
+    <div class="stat"><div class="stat-num">{{ total_captured }}</div><div class="stat-label">Requests captured</div></div>
+    <div class="stat"><div class="stat-num">{{ unique_endpoints }}</div><div class="stat-label">Unique endpoints</div></div>
+    <div class="stat"><div class="stat-num">{{ duplicate_count }}</div><div class="stat-label">Duplicates skipped</div></div>
+    <div class="stat"><div class="stat-num">{{ anomaly_count }}</div><div class="stat-label">Anomalies flagged</div></div>
+    <div class="stat"><div class="stat-num">{{ test_count }}</div><div class="stat-label">Tests generated</div></div>
+    <div class="stat"><div class="stat-num">{{ "%.2f"|format(avg_score) }}</div><div class="stat-label">Avg test score</div></div>
+  </div>
+
+  <!-- Cluster breakdown -->
+  <div class="section">
+    <div class="section-header">Endpoint clusters</div>
+    <table>
+      <tr><th>Cluster</th><th>Endpoints</th><th>Tests</th><th>Anomalies</th><th>Avg Score</th></tr>
+      {% for label, data in clusters.items() %}
+      {% set cluster_tests = data.tests %}
+      {% set cluster_scores = cluster_tests | selectattr("score_overall") | map(attribute="score_overall") | list %}
+      {% set cluster_avg = (cluster_scores | sum / cluster_scores | length) if cluster_scores else 0 %}
+      <tr>
+        <td><strong>{{ label }}</strong></td>
+        <td>{{ data.requests | length }}</td>
+        <td>{{ cluster_tests | length }}</td>
+        <td>{{ data.requests | selectattr("is_anomaly") | list | length }}</td>
+        <td>
+          {% if cluster_avg >= 0.9 %}<span class="score score-high">{{ "%.2f"|format(cluster_avg) }}</span>
+          {% elif cluster_avg >= 0.7 %}<span class="score score-mid">{{ "%.2f"|format(cluster_avg) }}</span>
+          {% else %}<span class="score score-low">{{ "%.2f"|format(cluster_avg) }}</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <!-- Generated tests -->
+  <div class="section">
+    <div class="section-header">Generated tests</div>
+    <table>
+      <tr><th>File</th><th>Cluster</th><th>Score</th><th>Retries</th><th>Status</th></tr>
+      {% for t in tests %}
+      <tr>
+        <td><code>{{ t.file_path.split("/")[-1] }}</code></td>
+        <td>{{ t.cluster_label }}</td>
+        <td>
+          {% if t.score_overall %}
+            {% if t.score_overall >= 0.9 %}<span class="score score-high">{{ "%.2f"|format(t.score_overall) }}</span>
+            {% elif t.score_overall >= 0.7 %}<span class="score score-mid">{{ "%.2f"|format(t.score_overall) }}</span>
+            {% else %}<span class="score score-low">{{ "%.2f"|format(t.score_overall) }}</span>{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ t.retry_count }}</td>
+        <td>
+          {% if t.is_high_confidence %}<span class="badge badge-green">High confidence</span>
+          {% elif t.needs_review %}<span class="badge badge-red">Needs review</span>
+          {% else %}<span class="badge badge-yellow">Accepted</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <!-- Captured endpoints -->
+  <div class="section">
+    <div class="section-header">Captured endpoints</div>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Status</th><th>Cluster</th><th>Flags</th></tr>
+      {% for r in requests %}
+      <tr>
+        <td><span class="method {{ r.method | lower }}">{{ r.method }}</span></td>
+        <td><code>{{ r.path }}</code></td>
+        <td>{{ r.response_status }}</td>
+        <td>{{ r.cluster_label or "—" }}</td>
+        <td>
+          {% if r.is_duplicate %}<span class="badge badge-gray">Duplicate</span> {% endif %}
+          {% if r.is_anomaly %}<span class="badge badge-anomaly">Anomaly</span> {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+</div>
+</body>
+</html>
