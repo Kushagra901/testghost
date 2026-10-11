@@ -19,8 +19,9 @@ async def validator_node(state: AgentState) -> AgentState:
         state["error_message"] = None
         logger.debug("Validator: syntax OK")
     except SyntaxError as exc:
-        retry_count = state.get("retry_count", 0)
-        if retry_count < MAX_RETRIES:
+        retry_count = state.get("retry_count", 0) + 1
+        state["retry_count"] = retry_count
+        if retry_count <= MAX_RETRIES:
             state["validation_passed"] = False
             state["error_message"] = f"SyntaxError at line {exc.lineno}: {exc.msg}"
             logger.warning("Validator: syntax error (retry %d) — %s", retry_count, exc.msg)

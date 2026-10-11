@@ -5,15 +5,11 @@ import json
 import logging
 import os
 
-import anthropic
-
+from langgraph_pipeline.llm import call_llm
 from langgraph_pipeline.prompts import PLANNER_SYSTEM, PLANNER_USER
 from langgraph_pipeline.state import AgentState
 
 logger = logging.getLogger(__name__)
-_client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
-MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
-TIMEOUT = int(os.environ.get("LLM_TIMEOUT_SECONDS", "30"))
 
 
 async def planner_node(state: AgentState) -> AgentState:
@@ -30,19 +26,11 @@ async def planner_node(state: AgentState) -> AgentState:
     )
 
     try:
-        response = await asyncio.wait_for(
-            asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: _client.messages.create(
-                    model=MODEL,
-                    max_tokens=500,
-                    system=PLANNER_SYSTEM,
-                    messages=[{"role": "user", "content": user_msg}],
-                ),
-            ),
-            timeout=TIMEOUT,
-        )
-        text = response.content[0].text.strip()
+        text = await call_llm(PLANNER_SYSTEM, user_msg, max_tokens=500)
+        # Strip markdown fences if present
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
         scenarios = json.loads(text)
         if not isinstance(scenarios, list):
             scenarios = []
