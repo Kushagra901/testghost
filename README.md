@@ -80,33 +80,39 @@ cp .env.example .env
 # Windows (PowerShell)
 Copy-Item .env.example .env
 ```
-Open `.env` and set your Anthropic API key (obtainable from [console.anthropic.com](https://console.anthropic.com/)). *Never commit your `.env` file to version control.*
+Open `.env` and set your preferred LLM provider and credentials. *Never commit your `.env` file to version control.*
 ```env
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxx
+# Choose provider: gemini (default), anthropic, groq, openrouter
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=your-gemini-api-key-here
+
+# Or for Anthropic:
+# LLM_PROVIDER=anthropic
+# ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxx
 ```
 
 ### 3. Install Dependencies
+Ensure your Python 3.12 virtual environment is activated:
 ```bash
-# Using Makefile
-make dev-install
+# Windows (PowerShell)
+.\.venv\Scripts\Activate.ps1
 
-# Or directly with pip
+# macOS / Linux
+source .venv/bin/activate
+```
+Install dependencies and the TestGhost CLI in editable mode:
+```bash
 pip install -r requirements.txt -r requirements-dev.txt
 pip install -e .
 ```
 
 ### 4. Start PostgreSQL & Run Database Migrations
-Ensure Docker is running, then start the database container and apply schema migrations:
+Ensure Docker Desktop is running, then start the PostgreSQL + pgvector container and apply schema migrations:
 ```bash
-# Using Makefile
-make db-up
-make migrate
-
-# Or directly
 docker compose up -d
 alembic upgrade head
 ```
-*(Note: The default database port configured in `docker-compose.yml` and `.env.example` is `5432`. Local ports may vary based on your machine configuration).*
+*(Note: PostgreSQL + pgvector is mapped to host port `5433` in `docker-compose.yml` and `.env` to prevent conflicts with default host PostgreSQL instances).*
 
 ### 5. HTTPS Certificate Setup (One-Time)
 To intercept encrypted HTTPS traffic without browser security warnings, install the mitmproxy Certificate Authority certificate into your operating system's or browser's trusted certificate store. Detailed instructions are available in the [official mitmproxy documentation](https://docs.mitmproxy.org/stable/concepts-certificates/).

@@ -6,6 +6,7 @@ Converts captured HTTP requests into 384-dim vectors for pgvector storage.
 import json
 import logging
 import os
+from pathlib import Path
 import re
 
 from sentence_transformers import SentenceTransformer
@@ -25,8 +26,13 @@ class RequestEmbedder:
 
     def __init__(self) -> None:
         cache_dir = os.environ.get("SENTENCE_TRANSFORMERS_HOME", "models/embeddings_cache")
-        self._model = SentenceTransformer(self.MODEL_NAME, cache_folder=cache_dir)
-        logger.info("Loaded embedding model: %s", self.MODEL_NAME)
+        cache_path = Path(cache_dir)
+        if (cache_path / "model.safetensors").exists() or (cache_path / "pytorch_model.bin").exists():
+            self._model = SentenceTransformer(str(cache_path))
+            logger.info("Loaded embedding model from local cache: %s", cache_dir)
+        else:
+            self._model = SentenceTransformer(self.MODEL_NAME, cache_folder=cache_dir)
+            logger.info("Loaded embedding model: %s", self.MODEL_NAME)
 
     def normalize_path(self, path: str) -> str:
         """Replace numeric IDs and UUIDs with generic placeholders."""

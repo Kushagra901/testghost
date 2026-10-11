@@ -30,11 +30,11 @@ class Deduplicator:
         vector_str = "[" + ",".join(str(f) for f in embedding_vector) + "]"
 
         query = text("""
-            SELECT cr.id, (1 - (e.vector <=> :vec::vector)) AS similarity
+            SELECT cr.id, (1 - (e.vector <=> CAST(:vec AS vector))) AS similarity
             FROM embeddings e
             JOIN captured_requests cr ON cr.id = e.captured_request_id
             WHERE cr.session_id = :session_id
-            ORDER BY e.vector <=> :vec::vector
+            ORDER BY e.vector <=> CAST(:vec AS vector)
             LIMIT 1
         """)
 
