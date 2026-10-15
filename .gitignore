@@ -60,6 +60,8 @@ alembic/versions/__pycache__/
 
 # Logs
 *.log
+backend.log
+proxy.log
 logs/
 
 # TestGhost temporary state

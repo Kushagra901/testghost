@@ -2,20 +2,39 @@
 TestGhost v2 — FastAPI application entry point.
 """
 
+import logging
+import threading
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.db.init_db import init_db
 from backend.routers import capture, generate, sessions
+
+logger = logging.getLogger(__name__)
+
+_embedder_ready = False
+
+
+def _warm_embedder() -> None:
+    global _embedder_ready
+    try:
+        from ml.embedder import RequestEmbedder
+        embedder = RequestEmbedder()
+        embedder.embed("GET", "/health", "")
+        _embedder_ready = True
+        logger.info("Embedding model warmed and ready.")
+    except Exception as exc:
+        logger.error("Failed to warm embedding model: %s", exc)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Run startup tasks before serving requests."""
     await init_db()
+    threading.Thread(target=_warm_embedder, daemon=True).start()
     yield
 
 
@@ -43,3 +62,11 @@ app.include_router(generate.router, prefix="", tags=["generate"])
 async def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok", "version": "0.2.0"}
+
+
+@app.get("/ready", tags=["meta"])
+async def ready() -> dict[str, str]:
+    """Ready check endpoint: returns 200 once embedder is loaded, 503 otherwise."""
+    if _embedder_ready:
+        return {"status": "ready"}
+    raise HTTPException(status_code=503, detail="Embedding model is still loading")
