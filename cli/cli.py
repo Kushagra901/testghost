@@ -4,6 +4,7 @@ TestGhost CLI — testghost start | stop | generate | sessions
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -107,7 +108,25 @@ def start(session_name: str, port: int, backend_port: int) -> None:
             time.sleep(1)
 
     if not backend_ready:
-        console.print("[red]Failed to start backend: timed out waiting for server to be ready.[/red]")
+        console.print("[red]Failed to start backend: timed out waiting for server to be ready. Check backend.log.[/red]")
+        backend_proc.kill()
+        sys.exit(1)
+
+    # Wait for embedding model to be ready (up to 180 seconds)
+    console.print("[bold dim]Loading embedding model (first run can take a minute or two)...[/bold dim]")
+    model_ready = False
+    for _ in range(180):
+        try:
+            resp = httpx.get(f"{backend_url}/ready", timeout=2)
+            if resp.status_code == 200:
+                model_ready = True
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+
+    if not model_ready:
+        console.print("[red]Failed to initialize embedding model: timed out waiting for backend to be ready. Check backend.log.[/red]")
         backend_proc.kill()
         sys.exit(1)
 
@@ -124,13 +143,41 @@ def start(session_name: str, port: int, backend_port: int) -> None:
     # Start mitmproxy
     console.print(f"[bold]Starting proxy on port {port}...[/bold]")
     env = {**os.environ, "SESSION_ID": session_id, "BACKEND_URL": backend_url}
+    proxy_log = open("proxy.log", "w")
     proxy_proc = subprocess.Popen(
-        [sys.executable, "-m", "mitmproxy.tools.main", "mitmdump",
+        [sys.executable, "-u", "-c", "from mitmproxy.tools.main import mitmdump; mitmdump()",
          "-p", str(port), "-s", "proxy/addon.py"],
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=proxy_log,
+        stderr=proxy_log,
     )
+
+    # Health check: verify proxy is listening on port and backend /health is still healthy
+    proxy_ready = False
+    for _ in range(15):
+        if proxy_proc.poll() is not None:
+            break
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                resp = httpx.get(f"{backend_url}/health", timeout=1)
+                if resp.status_code == 200:
+                    proxy_ready = True
+                    break
+        except (OSError, ConnectionRefusedError, httpx.RequestError):
+            time.sleep(1)
+
+    if not proxy_ready:
+        console.print(f"[red]Failed to start proxy: port {port} is not listening or backend is unhealthy. Check proxy.log and backend.log.[/red]")
+        try:
+            if sys.platform == "win32":
+                subprocess.run(["taskkill", "/F", "/PID", str(proxy_proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["taskkill", "/F", "/PID", str(backend_proc.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                proxy_proc.kill()
+                backend_proc.kill()
+        except Exception:
+            pass
+        sys.exit(1)
 
     _write_state({
         "session_id": session_id,

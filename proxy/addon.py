@@ -1,11 +1,8 @@
-"""
-mitmproxy addon for TestGhost.
-Intercepts HTTPS traffic and forwards scrubbed payloads to the FastAPI backend.
-"""
-
 import json
 import logging
 import os
+import queue
+import threading
 import time
 from typing import Any
 
@@ -19,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Paths to always skip — noise reduction
 SKIP_PATHS = {
     "/favicon.ico", "/robots.txt", "/.well-known",
-    "/health", "/metrics", "/static",
+    "/health", "/ready", "/metrics", "/static",
 }
 
 SKIP_EXTENSIONS = {".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2"}
@@ -33,7 +30,10 @@ class TestGhostAddon:
         self.backend_url: str = os.environ.get("BACKEND_URL", "http://localhost:8000")
         self.scrubber = PIIScrubber()
         self._pending: dict[str, float] = {}  # flow_id -> start_time
-        self._client = httpx.Client(timeout=5.0)
+        self._client = httpx.Client(timeout=30.0)
+        self._queue: queue.Queue[dict[str, Any] | None] = queue.Queue()
+        self._worker_thread = threading.Thread(target=self._worker, daemon=True)
+        self._worker_thread.start()
 
         if not self.session_id:
             logger.warning("SESSION_ID not set — captures will be rejected by the backend.")
@@ -55,7 +55,7 @@ class TestGhostAddon:
             self._pending[flow.id] = time.monotonic()
 
     def response(self, flow: http.HTTPFlow) -> None:
-        """Capture complete request+response and send to backend."""
+        """Capture complete request+response and queue asynchronously."""
         if self._should_skip(flow) or flow.id not in self._pending:
             return
 
@@ -63,8 +63,9 @@ class TestGhostAddon:
         response_time_ms = (time.monotonic() - start_time) * 1000
 
         try:
+            # PII scrubbing happens here before the payload is queued
             payload = self._build_payload(flow, response_time_ms)
-            self._send(payload)
+            self._queue.put(payload)
         except Exception as exc:
             logger.warning("TestGhost capture failed for %s: %s", flow.request.path, exc)
 
@@ -99,17 +100,49 @@ class TestGhostAddon:
             "response_time_ms": round(response_time_ms, 2),
         }
 
-    def _send(self, payload: dict[str, Any]) -> None:
+    def _worker(self) -> None:
+        while True:
+            payload = self._queue.get()
+            if payload is None:
+                break
+            try:
+                self._send_with_retry(payload)
+            except Exception as exc:
+                logger.error("Unexpected error sending capture: %s", exc)
+            finally:
+                self._queue.task_done()
+
+    def _send_with_retry(self, payload: dict[str, Any]) -> None:
+        path = payload.get("path", "")
+        for attempt in range(2):
+            try:
+                response = self._client.post(
+                    f"{self.backend_url}/capture",
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                if response.status_code in (200, 201):
+                    return
+                logger.warning(
+                    "Backend returned %s for capture %s (attempt %d/2)",
+                    response.status_code, path, attempt + 1
+                )
+            except httpx.RequestError as exc:
+                logger.warning(
+                    "Could not reach TestGhost backend for %s (attempt %d/2): %s",
+                    path, attempt + 1, exc
+                )
+            if attempt == 0:
+                time.sleep(1.0)
+
+        logger.error("Capture permanently dropped for %s after 2 failed attempts.", path)
+
+    def done(self) -> None:
+        """Drain queue on shutdown."""
         try:
-            response = self._client.post(
-                f"{self.backend_url}/capture",
-                json=payload,
-                headers={"Content-Type": "application/json"},
-            )
-            if response.status_code not in (200, 201):
-                logger.warning("Backend returned %s for capture", response.status_code)
-        except httpx.RequestError as exc:
-            logger.warning("Could not reach TestGhost backend: %s", exc)
+            self._queue.join()
+        except Exception:
+            pass
 
 
 # mitmproxy expects this at module level
